@@ -1,4 +1,4 @@
-# FROM: https://github.com/Arthur-Milchior/anki-correct-due
+# Based on: https://github.com/Arthur-Milchior/anki-correct-due
 # Modified version by lovac42 for Anki 2.0 (untest on 2.1)
 
 # Anki's due time is 32bit, but the due field on new cards also
@@ -21,13 +21,16 @@ AUTOMATIC_SCAN_BEFORE_DB_CHECKUP = False
 # Priority: due, sibling order, creation time
 REORDER_BY="due,ord,id"
 
+# REORDER_BY="id" #default in Anki API
+
 # =====================================
 
-import anki
+import anki, random
 from anki.hooks import wrap
 from aqt.qt import QAction
 from aqt import mw
 from aqt.utils import tooltip
+from anki.utils import ids2str, intTime
 
 
 NEW_CARDS_RANDOM = 0
@@ -38,34 +41,43 @@ def redue(col):
     if not col.db.scalar("select id from cards where type=0 and due>666000"):
         return
 
-    #doesn't show up on small db
-    tooltip(_("found cards with dues more than 666000, repositioning now."), period=2000)
+    #Doesn't show up on small db
+    tooltip(_("found cards with large dues count, repositioning now."), period=2000)
+    mw.progress.start()
 
 
-    redline = col.db.scalar(
+    #Foreach deck option group
+    for dconf in col.decks.dconf.values():
+
+        str_dids = ids2str(col.decks.didsForConf(dconf))
+
+        #Skip small decks
+        girth=col.db.scalar(
         """select max(due)+1 from cards 
-        where due<=666000 and type=0""")
+           where type=0 and did in %s"""%str_dids) or 0
+        if girth<666000: continue
 
-    if redline < 65536: #process overflows only
-        query="""select id from cards where type=0 
-                and due>666000 order by %s"""%REORDER_BY
 
-    else: #process all
-        query = "select id from cards where type=0 order by %s"%REORDER_BY
-        redline = 0
+        #deck conf = "show new cards in randomize order"
+        shuffle = dconf['new']['order'] == NEW_CARDS_RANDOM
 
-    cids = col.db.list(query)
-    col.sched.sortCards(cids, start=redline, shift=True)
+        redline = col.db.scalar(
+        """select max(due)+1 from cards 
+           where due<=666000 and type=0
+           and did in %s"""%str_dids) or 1
+
+        # We use this custom code to avoid sorting by id as users
+        # may have customized orders in the due field.
+        customSortCards(col, str_dids, start=redline, shuffle=shuffle)
+
 
     # Reset pos counter
     col.conf['nextPos'] = col.db.scalar(
         "select max(due)+1 from cards where type = 0") or 0
 
-    # If deck conf was set to randomize review order
-    dconfs = col.decks.dconf
-    random_dconfs = [dconf for dconf in dconfs.values() if dconf["new"]['order'] == NEW_CARDS_RANDOM]
-    for dconf in random_dconfs:
-        col.sched.resortConf(dconf)
+    mw.progress.finish()
+
+
 
 
 if AUTOMATIC_SCAN_BEFORE_DB_CHECKUP:
@@ -76,4 +88,33 @@ else:
     mw.form.menuTools.addAction(action)
     action.triggered.connect(lambda:redue(mw.col))
 
-    
+
+
+
+
+
+############################################
+##  UTILS.py
+###########################################
+
+def customSortCards(col, str_dids, start=1, shuffle=False):
+    limit = "and due>666000 " if start < 65536 else ""
+    query = """select id from cards where type=0 %s
+               and did in %s order by %s"""
+
+    cids = col.db.list(query%(limit,str_dids,REORDER_BY))
+    if shuffle:
+        random.shuffle(cids)
+
+    now = intTime()
+    due = start
+    d = []
+
+    for id in cids:
+        d.append(dict(now=now, due=due, usn=col.usn(), cid=id))
+        due+=1
+
+    col.db.executemany(
+        "update cards set due=:due,mod=:now,usn=:usn where id=:cid", d)
+
+
