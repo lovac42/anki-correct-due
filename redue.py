@@ -19,7 +19,7 @@
 # This also removes toolbar menu item.
 AUTOMATIC_SCAN_BEFORE_DB_CHECKUP = False
 
-# Priority: due, sibling order, creation time
+# Priority: due, creation time
 REORDER_BY="due,id"
 
 # REORDER_BY="id" #default in Anki API
@@ -36,10 +36,13 @@ from anki.utils import ids2str, intTime
 
 NEW_CARDS_RANDOM = 0
 
+SEGMENT = 10001
+
+
 def redue(col):
 
     # Save time
-    if not col.db.scalar("select id from cards where type=0 and due>666000"):
+    if not col.db.scalar("select id from cards where type=0 and due>=666000"):
         return
 
     #Doesn't show up on small db
@@ -64,8 +67,8 @@ def redue(col):
 
         redline = col.db.scalar(
         """select max(due)+1 from cards 
-           where due<=666000 and type=0
-           and did in %s"""%str_dids) or 1
+           where due<666000 and type=0
+           and did in %s"""%str_dids) or SEGMENT
 
         # We use this custom code to avoid sorting by id as users
         # may have customized orders in the due field.
@@ -106,7 +109,7 @@ def customSortCards(col, str_dids, start=1, shuffle=False):
         due = start
     else: #reserve the top 0-10k for user custom dues
         limit = "and due>10000 "
-        due = 10001
+        due = SEGMENT
 
     query = """select id from cards where type=0 %s
                and did in %s order by %s"""
