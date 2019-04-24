@@ -98,7 +98,14 @@ else:
 ###########################################
 
 def customSortCards(col, str_dids, start=1, shuffle=False):
-    limit = "and due>666000 " if start < 65536 else ""
+    now = intTime()
+    limit = ""
+    due = 1
+
+    if start < 65536:
+        limit = "and due>666000 "
+        due = start
+
     query = """select id from cards where type=0 %s
                and did in %s order by %s"""
 
@@ -106,15 +113,10 @@ def customSortCards(col, str_dids, start=1, shuffle=False):
     if shuffle:
         random.shuffle(cids)
 
-    now = intTime()
-    due = start
     d = []
-
     for id in cids:
         d.append(dict(now=now, due=due, usn=col.usn(), cid=id))
         due+=1
 
     col.db.executemany(
         "update cards set due=:due,mod=:now,usn=:usn where id=:cid", d)
-
-
