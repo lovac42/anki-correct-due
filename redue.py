@@ -7,7 +7,7 @@
 
 # PSEUDOCODE:
 # foreach card in whole_collection {
-#    card.due = max(1000000, card.due)
+#    card.due = min(1000000, card.due)
 # }
 
 # All cards affected by this will loose their sorting during review.
@@ -16,10 +16,11 @@
 
 # =====================================
 
+# This also removes toolbar menu item.
 AUTOMATIC_SCAN_BEFORE_DB_CHECKUP = False
 
 # Priority: due, sibling order, creation time
-REORDER_BY="due,ord,id"
+REORDER_BY="due,id"
 
 # REORDER_BY="id" #default in Anki API
 
@@ -99,17 +100,18 @@ else:
 
 def customSortCards(col, str_dids, start=1, shuffle=False):
     now = intTime()
-    limit = ""
-    due = 1
 
-    if start < 65536:
+    if start <= 65536: #16bits
         limit = "and due>666000 "
         due = start
+    else: #reserve the top 0-10k for user custom dues
+        limit = "and due>10000 "
+        due = 10001
 
     query = """select id from cards where type=0 %s
                and did in %s order by %s"""
 
-    cids = col.db.list(query%(limit,str_dids,REORDER_BY))
+    cids = col.db.list(query%(limit, str_dids, REORDER_BY))
     if shuffle:
         random.shuffle(cids)
 
